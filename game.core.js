@@ -67,44 +67,38 @@ if('undefined' != typeof(global)) frame_time = 45; //on server we run at 45ms, 2
             //We create a player set, passing them
             //the game that is running them, as well
         if(this.server) {
+            this.self = new game_player(this, game_instance.players[0]);
+            this.players = [this.self];
 
-            this.players = {
-                self : new game_player(this,this.instance.player_host),
-                other : new game_player(this,this.instance.player_client)
-            };
-
-           this.players.self.pos = {x:20,y:20};
+            this.players[0].pos = {x:20,y:20};
 
         } else {
+            this.self = new game_player(this);
+            this.players = [this.self];
 
-            this.players = {
-                self : new game_player(this),
-                other : new game_player(this)
-            };
+            //     //Debugging ghosts, to help visualise things
+            // this.ghosts = {
+            //         //Our ghost position on the server
+            //     server_pos_self : new game_player(this),
+            //         //The other players server position as we receive it
+            //     server_pos_other : new game_player(this),
+            //         //The other players ghost destination position (the lerp)
+            //     pos_other : new game_player(this)
+            // };
 
-                //Debugging ghosts, to help visualise things
-            this.ghosts = {
-                    //Our ghost position on the server
-                server_pos_self : new game_player(this),
-                    //The other players server position as we receive it
-                server_pos_other : new game_player(this),
-                    //The other players ghost destination position (the lerp)
-                pos_other : new game_player(this)
-            };
+            // this.ghosts.pos_other.state = 'dest_pos';
 
-            this.ghosts.pos_other.state = 'dest_pos';
+            // this.ghosts.pos_other.info_color = 'rgba(255,255,255,0.1)';
 
-            this.ghosts.pos_other.info_color = 'rgba(255,255,255,0.1)';
+            // this.ghosts.server_pos_self.info_color = 'rgba(255,255,255,0.2)';
+            // this.ghosts.server_pos_other.info_color = 'rgba(255,255,255,0.2)';
 
-            this.ghosts.server_pos_self.info_color = 'rgba(255,255,255,0.2)';
-            this.ghosts.server_pos_other.info_color = 'rgba(255,255,255,0.2)';
+            // this.ghosts.server_pos_self.state = 'server_pos';
+            // this.ghosts.server_pos_other.state = 'server_pos';
 
-            this.ghosts.server_pos_self.state = 'server_pos';
-            this.ghosts.server_pos_other.state = 'server_pos';
-
-            this.ghosts.server_pos_self.pos = { x:20, y:20 };
-            this.ghosts.pos_other.pos = { x:500, y:200 };
-            this.ghosts.server_pos_other.pos = { x:500, y:200 };
+            // this.ghosts.server_pos_self.pos = { x:20, y:20 };
+            // this.ghosts.pos_other.pos = { x:500, y:200 };
+            // this.ghosts.server_pos_other.pos = { x:500, y:200 };
         }
 
             //The speed at which the clients move.
@@ -147,7 +141,7 @@ if('undefined' != typeof(global)) frame_time = 45; //on server we run at 45ms, 2
                 //Set their colors from the storage or locally
             this.color = localStorage.getItem('color') || '#cc8822' ;
             localStorage.setItem('color', this.color);
-            this.players.self.color = this.color;
+            this.self.color = this.color;
 
                 //Make this only if requested
             if(String(window.location).indexOf('debug') != -1) {
@@ -158,7 +152,6 @@ if('undefined' != typeof(global)) frame_time = 45; //on server we run at 45ms, 2
 
             this.server_time = 0;
             this.laststate = {};
-
         }
 
     }; //game_core.constructor
@@ -200,10 +193,10 @@ game_core.prototype.v_lerp = function(v,tv,t) { return { x: this.lerp(v.x, tv.x,
         as well as to draw that state when required.
 */
 
-    var game_player = function( game_instance, player_instance ) {
+    var game_player = function( game_instance, player_sock ) {
 
             //Store the instance, if any
-        this.instance = player_instance;
+        this.sock = player_sock;
         this.game = game_instance;
 
             //Set up initial values for our state information
@@ -233,7 +226,7 @@ game_core.prototype.v_lerp = function(v,tv,t) { return { x: this.lerp(v.x, tv.x,
             //The 'host' of a game gets created with a player instance since
             //the server already knows who they are. If the server starts a game
             //with only a host, the other player is set up in the 'else' below
-        if(player_instance) {
+        if(player_sock) {
             this.pos = { x:20, y:20 };
         } else {
             this.pos = { x:500, y:200 };
@@ -401,22 +394,20 @@ game_core.prototype.update_physics = function() {
     //Updated at 15ms , simulates the world state
 game_core.prototype.server_update_physics = function() {
 
-        //Handle player one
-    this.players.self.old_state.pos = this.pos( this.players.self.pos );
-    var new_dir = this.process_input(this.players.self);
-    this.players.self.pos = this.v_add( this.players.self.old_state.pos, new_dir );
-
-        //Handle player two
-    this.players.other.old_state.pos = this.pos( this.players.other.pos );
-    var other_new_dir = this.process_input(this.players.other);
-    this.players.other.pos = this.v_add( this.players.other.old_state.pos, other_new_dir);
+    this.players.forEach(p => {
+        p.old_state.pos = this.pos(p);
+        var new_dir = this.process_input(p);
+        p.pos = this.v_add(p.old_state.pos, new_dir);
+    });
 
         //Keep the physics position in the world
-    this.check_collision( this.players.self );
-    this.check_collision( this.players.other );
+    this.players.forEach(p => {
+        this.check_collision(p);
+    });
 
-    this.players.self.inputs = []; //we have cleared the input buffer, so remove this
-    this.players.other.inputs = []; //we have cleared the input buffer, so remove this
+    this.players.forEach(p => {
+        p.inputs = [];
+    }); //we have cleared the input buffer, so remove this
 
 }; //game_core.server_update_physics
 
@@ -428,34 +419,31 @@ game_core.prototype.server_update = function(){
     this.server_time = this.local_time;
 
         //Make a snapshot of the current state, for updating the clients
+        // SNAPSHOT 
     this.laststate = {
-        hp  : this.players.self.pos,                //'host position', the game creators position
-        cp  : this.players.other.pos,               //'client position', the person that joined, their position
-        his : this.players.self.last_input_seq,     //'host input sequence', the last input we processed for the host
-        cis : this.players.other.last_input_seq,    //'client input sequence', the last input we processed for the client
+        poss  : [this.players.map(e => e.pos)],   
+        iss : [this.players.map(e => e.last_input_seq)],
         t   : this.server_time                      // our current local time on the server
     };
 
-        //Send the snapshot to the 'host' player
-    if(this.players.self.instance) {
-        this.players.self.instance.emit( 'onserverupdate', this.laststate );
-    }
 
-        //Send the snapshot to the 'client' player
-    if(this.players.other.instance) {
-        this.players.other.instance.emit( 'onserverupdate', this.laststate );
-    }
+    // send snapshots to all players
+
+    this.players.forEach(p => {
+        p.sock.emit("onserverupdate", this.laststate);
+    });
 
 }; //game_core.server_update
 
 
 game_core.prototype.handle_server_input = function(client, input, input_time, input_seq) {
 
-        //Fetch which client this refers to out of the two
-    var player_client =
-        (client.userid == this.players.self.instance.userid) ?
-            this.players.self : this.players.other;
+        //Fetch which client this refers to out of the bunch
+        // TODO replace so client receives proper messages
 
+    var player_client = this.players.find(p => {
+        p.id === client.userid
+    });
         //Store the input on the player instance for processing in the physics loop
    player_client.inputs.push({inputs:input, time:input_time, seq:input_seq});
 
@@ -523,7 +511,7 @@ game_core.prototype.client_handle_input = function(){
         this.input_seq += 1;
 
             //Store the input state as a snapshot of what happened.
-        this.players.self.inputs.push({
+        this.self.inputs.push({
             inputs : input,
             time : this.local_time.fixed(3),
             seq : this.input_seq
@@ -562,11 +550,12 @@ game_core.prototype.client_process_net_prediction_correction = function() {
     var my_server_pos = this.players.self.host ? latest_server_data.hp : latest_server_data.cp;
 
         //Update the debug server position block
-    this.ghosts.server_pos_self.pos = this.pos(my_server_pos);
+    // this.ghosts.server_pos_self.pos = this.pos(my_server_pos);
 
             //here we handle our local input prediction ,
             //by correcting it with the server and reconciling its differences
 
+        // TODO: lookup in players array what my last input on server is
         var my_last_input_on_server = this.players.self.host ? latest_server_data.his : latest_server_data.cis;
         if(my_last_input_on_server) {
                 //The last input sequence index in my local input list
@@ -673,14 +662,14 @@ game_core.prototype.client_process_net_updates = function() {
 
             //update the dest block, this is a simple lerp
             //to the target from the previous point in the server_updates buffer
-        this.ghosts.server_pos_other.pos = this.pos(other_server_pos);
-        this.ghosts.pos_other.pos = this.v_lerp(other_past_pos, other_target_pos, time_point);
+        // this.ghosts.server_pos_other.pos = this.pos(other_server_pos);
+        // this.ghosts.pos_other.pos = this.v_lerp(other_past_pos, other_target_pos, time_point);
 
-        if(this.client_smoothing) {
-            this.players.other.pos = this.v_lerp( this.players.other.pos, this.ghosts.pos_other.pos, this._pdt*this.client_smooth);
-        } else {
-            this.players.other.pos = this.pos(this.ghosts.pos_other.pos);
-        }
+        // if(this.client_smoothing) {
+        //     this.players.other.pos = this.v_lerp( this.players.other.pos, this.ghosts.pos_other.pos, this._pdt*this.client_smooth);
+        // } else {
+        //     this.players.other.pos = this.pos(this.ghosts.pos_other.pos);
+        // }
 
             //Now, if not predicting client movement , we will maintain the local player position
             //using the same method, smoothing the players information from the past.
@@ -694,7 +683,7 @@ game_core.prototype.client_process_net_updates = function() {
             var my_past_pos = this.players.self.host ? previous.hp : previous.cp;
 
                 //Snap the ghost to the new server position
-            this.ghosts.server_pos_self.pos = this.pos(my_server_pos);
+            // this.ghosts.server_pos_self.pos = this.pos(my_server_pos);
             var local_target = this.v_lerp(my_past_pos, my_target_pos, time_point);
 
                 //Smoothly follow the destination position
@@ -710,14 +699,13 @@ game_core.prototype.client_process_net_updates = function() {
 }; //game_core.client_process_net_updates
 
 game_core.prototype.client_onserverupdate_recieved = function(data){
-
-            //Lets clarify the information we have locally. One of the players is 'hosting' and
-            //the other is a joined in client, so we name these host and client for making sure
-            //the positions we get from the server are mapped onto the correct local sprites
-        var player_host = this.players.self.host ?  this.players.self : this.players.other;
-        var player_client = this.players.self.host ?  this.players.other : this.players.self;
-        var this_player = this.players.self;
-        
+    /*
+    this.laststate = {
+        poss  : [this.players.self.pos, this.players.others.map(e => e.pos)],      // host is always first in this array
+        iss : [this.players.self.last_input_seq, this.players.others.map(e => e.last_input_seq)],    //host is always first in this array
+        t   : this.server_time                      // our current local time on the server
+    };
+    */
             //Store the server time (this is offset by the latency in the network, by the time we get it)
         this.server_time = data.t;
             //Update our local offset time from the last server update
@@ -731,14 +719,12 @@ game_core.prototype.client_onserverupdate_recieved = function(data){
 
         if(this.naive_approach) {
 
-            if(data.hp) {
-                player_host.pos = this.pos(data.hp);
-            }
-
-            if(data.cp) {
-                player_client.pos = this.pos(data.cp);
-            }
-
+            data.poss.forEach(playerUpdate => {
+                const player = this.players.find(p => p.id === playerUpdate.id);
+                if (player) {
+                    player.pos = this.pos(playerUpdate.pos);
+                }
+            });
         } else {
 
                 //Cache the data from the server,
@@ -825,25 +811,27 @@ game_core.prototype.client_update = function() {
     }
 
         //Now they should have updated, we can draw the entity
-    this.players.other.draw();
+    this.players.forEach(c => {
+        c.draw();
+    });
 
         //When we are doing client side prediction, we smooth out our position
         //across frames using local input states we have stored.
     this.client_update_local_position();
 
         //And then we finally draw
-    this.players.self.draw();
+    // this.self.draw();
 
         //and these
-    if(this.show_dest_pos && !this.naive_approach) {
-        this.ghosts.pos_other.draw();
-    }
+    // if(this.show_dest_pos && !this.naive_approach) {
+    //     this.ghosts.pos_other.draw();
+    // }
 
-        //and lastly draw these
-    if(this.show_server_pos && !this.naive_approach) {
-        this.ghosts.server_pos_self.draw();
-        this.ghosts.server_pos_other.draw();
-    }
+    //     //and lastly draw these
+    // if(this.show_server_pos && !this.naive_approach) {
+    //     this.ghosts.server_pos_self.draw();
+    //     this.ghosts.server_pos_other.draw();
+    // }
 
         //Work out the fps average
     this.client_refresh_fps();
@@ -887,10 +875,10 @@ game_core.prototype.client_create_ping_timer = function() {
 game_core.prototype.client_create_configuration = function() {
 
     this.show_help = false;             //Whether or not to draw the help text
-    this.naive_approach = false;        //Whether or not to use the naive approach
+    this.naive_approach = true;        //Whether or not to use the naive approach
     this.show_server_pos = false;       //Whether or not to show the server position
     this.show_dest_pos = false;         //Whether or not to show the interpolation goal
-    this.client_predict = true;         //Whether or not the client is predicting input
+    this.client_predict = false;         //Whether or not the client is predicting input
     this.input_seq = 0;                 //When predicting client inputs, we store the last input as a sequence number
     this.client_smoothing = true;       //Whether or not the client side prediction tries to smooth things out
     this.client_smooth = 25;            //amount of smoothing to apply to client update dest
@@ -979,24 +967,21 @@ game_core.prototype.client_create_debug_gui = function() {
 }; //game_core.client_create_debug_gui
 
 game_core.prototype.client_reset_positions = function() {
-
-    var player_host = this.players.self.host ?  this.players.self : this.players.other;
-    var player_client = this.players.self.host ?  this.players.other : this.players.self;
-
-        //Host always spawns at the top left.
-    player_host.pos = { x:20,y:20 };
-    player_client.pos = { x:500, y:200 };
+    this.players.forEach(e => {
+        e.pos = e.host ? {x: 20, y: 20} : { x:500, y:200 };
+    });
 
         //Make sure the local player physics is updated
-    this.players.self.old_state.pos = this.pos(this.players.self.pos);
-    this.players.self.pos = this.pos(this.players.self.pos);
-    this.players.self.cur_state.pos = this.pos(this.players.self.pos);
+    this.self.old_state.pos = this.pos(this.self.cur_state.pos);
+    var nd = this.process_input(this.self);
+    this.self.cur_state.pos = this.v_add(this.self.old_state.pos, nd);
+    this.self.state_time = this.local_time;
 
         //Position all debug view items to their owners position
-    this.ghosts.server_pos_self.pos = this.pos(this.players.self.pos);
+    // this.ghosts.server_pos_self.pos = this.pos(this.players.self.pos);
 
-    this.ghosts.server_pos_other.pos = this.pos(this.players.other.pos);
-    this.ghosts.pos_other.pos = this.pos(this.players.other.pos);
+    // this.ghosts.server_pos_other.pos = this.pos(this.players.other.pos);
+    // this.ghosts.pos_other.pos = this.pos(this.players.other.pos);
 
 }; //game_core.client_reset_positions
 
@@ -1004,19 +989,30 @@ game_core.prototype.client_onreadygame = function(data) {
 
     var server_time = parseFloat(data.replace('-','.'));
 
-    var player_host = this.players.self.host ?  this.players.self : this.players.other;
-    var player_client = this.players.self.host ?  this.players.other : this.players.self;
+    // look for host player
+    var player_host;
+    if (this.players.self.host) {
+        player_host = this.players.self;
+    }else {
+        // must be in the other array
+        player_host = this.players.others.filter(e => e.self.host);
+    }
+    
 
     this.local_time = server_time + this.net_latency;
     console.log('server time is about ' + this.local_time);
 
         //Store their info colors for clarity. server is always blue
     player_host.info_color = '#2288cc';
-    player_client.info_color = '#cc8822';
+    this.players.others.forEach(e => {
+        e.info_color = '#cc8822';
+    });
         
         //Update their information
     player_host.state = 'local_pos(hosting)';
-    player_client.state = 'local_pos(joined)';
+    this.players.others.forEach(e => {
+        e.state = 'local_pos(joined)';
+    });
 
     this.players.self.state = 'YOU ' + this.players.self.state;
 
@@ -1031,6 +1027,9 @@ game_core.prototype.client_onjoingame = function(data) {
     this.players.self.host = false;
         //Update the local state
     this.players.self.state = 'connected.joined.waiting';
+    // need to create a player instance in the game object for ourselves (gonna choose to do this here)
+    // NEW CLIENT INITIALIZATION
+    // this.players.others.push(new game_player(this, this.players.others))
     this.players.self.info_color = '#00bb00';
 
         //Make sure the positions match servers and other clients
@@ -1048,11 +1047,11 @@ game_core.prototype.client_onhostgame = function(data) {
     this.local_time = server_time + this.net_latency;
 
         //Set the flag that we are hosting, this helps us position respawns correctly
-    this.players.self.host = true;
+    this.self.host = true;
 
         //Update debugging information to display state
-    this.players.self.state = 'hosting.waiting for a player';
-    this.players.self.info_color = '#cc0000';
+    this.self.state = 'hosting.waiting for a player';
+    this.self.info_color = '#cc0000';
 
         //Make sure we start in the correct place as the host.
     this.client_reset_positions();
@@ -1064,16 +1063,19 @@ game_core.prototype.client_onconnected = function(data) {
         //The server responded that we are now in a game,
         //this lets us store the information about ourselves and set the colors
         //to show we are now ready to be playing.
-    this.players.self.id = data.id;
-    this.players.self.info_color = '#cc0000';
-    this.players.self.state = 'connected';
-    this.players.self.online = true;
+    // get all the player data!
+    
+    this.self.id = data.id;
+    this.players[0].id = data.id;
+    this.self.info_color = '#cc0000';
+    this.self.state = 'connected';
+    this.self.online = true;
 
 }; //client_onconnected
 
 game_core.prototype.client_on_otherclientcolorchange = function(data) {
 
-    this.players.other.color = data;
+    // this.players.other.color = data;
 
 }; //game_core.client_on_otherclientcolorchange
 
@@ -1126,12 +1128,14 @@ game_core.prototype.client_ondisconnect = function(data) {
         //When we disconnect, we don't know if the other player is
         //connected or not, and since we aren't, everything goes to offline
 
-    this.players.self.info_color = 'rgba(255,255,255,0.1)';
-    this.players.self.state = 'not-connected';
-    this.players.self.online = false;
+    this.self.info_color = 'rgba(255,255,255,0.1)';
+    this.self.state = 'not-connected';
+    this.self.online = false;
 
-    this.players.other.info_color = 'rgba(255,255,255,0.1)';
-    this.players.other.state = 'not-connected';
+    this.players.forEach(c => {
+        c.info_color = 'rgba(255,255,255,0.1)';
+        c.state = 'not-connected';
+    });
 
 }; //client_ondisconnect
 
@@ -1143,7 +1147,7 @@ game_core.prototype.client_connect_to_server = function() {
             //When we connect, we are not 'connected' until we have a server id
             //and are placed in a game by the server. The server sends us a message for that.
         this.socket.on('connect', function(){
-            this.players.self.state = 'connecting';
+            this.self.state = 'connecting';
         }.bind(this));
 
             //Sent when we are disconnected (network, server down, etc)
@@ -1197,14 +1201,18 @@ game_core.prototype.client_draw_info = function() {
         this.ctx.fillText(' This only applies to other clients when prediction is enabled, and applies to local player with no prediction.', 170 , 230);
 
     } //if this.show_help
+    // find host
+    let player_host = this.players.find(p => {
+        p.host === true;
+    });
 
-        //Draw some information for the host
-    if(this.players.self.host) {
+    //     //Draw some information for the host
+    // if() {
 
-        this.ctx.fillStyle = 'rgba(255,255,255,0.7)';
-        this.ctx.fillText('You are the host', 10 , 465);
+    //     this.ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    //     this.ctx.fillText('You are the host', 10 , 465);
 
-    } //if we are the host
+    // } //if we are the host
 
 
         //Reset the style back to full white.
